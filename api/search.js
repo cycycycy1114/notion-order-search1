@@ -1,36 +1,73 @@
-export default async function handler(req, res) {
-  const { nickname } = req.query;
-  if (!nickname) return res.status(400).json({ error: '請提供暱稱' });
+const { Client } = require('@notionhq/client');
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
-  const NOTION_TOKEN = process.env.NOTION_TOKEN; // 存在 Vercel 後台的秘密變數
-  const DATABASE_ID = process.env.DATABASE_ID;   // 存在 Vercel 後台的秘密變數
+module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   try {
-    const notionRes = await fetch(`https://api.notion.com/v1/databases/${DATABASE_ID}/query`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_TOKEN}`,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        filter: {
-          property: 'LINE 暱稱',
-          rich_text: { equals: nickname }
+    const { nickname } = req.query;
+    const dbId = process.env.DATABASE_ID;
+
+    if (!dbId || !nickname) {
+      return res.status(400).json({ error: '缺少參數' });
+    }
+
+    // 取得資料庫結構來動態尋找對應的屬性名稱
+    const dbInfo = await notion.databases.retrieve({ database_id: dbId });
+    const propsSchema = dbInfo.properties;
+
+    // 自動尋找可以代表「暱稱/客戶名稱」的欄位
+    const namePropKey = Object.keys(propsSchema).find(k =>
+      ['訂單', '訂單名稱', '暱稱', 'LINE社群暱稱', 'Name', 'Title'].some(p => k.trim().toLowerCase() === p.trim().toLowerCase())
+    );
+
+    if (!namePropKey) {
+      return res.status(500).json({ error: 'Notion 資料庫中找不到對應的暱稱/標題欄位' });
+    }
+
+    // 向 Notion 查詢符合該暱稱的頁面
+    const response = await notion.databases.query({
+      database_id: dbId,
+      filter: {
+        property: namePropKey,
+        title: {
+          equals: nickname
         }
-      })
+      }
     });
 
-    const data = await notionRes.json();
-    const results = data.results.map(page => ({
-      spec: page.properties['購買商品規格']?.select?.name || page.properties['購買商品規格']?.rich_text[0]?.plain_text || '無',
-      delivery: page.properties['取貨方式']?.select?.name || '無',
-      quantity: page.properties['數量']?.number || 1,
-      status: page.properties['訂單狀態']?.select?.name || '處理中'
-    }));
+    // 格式化回傳給前端的資料
+    const results = response.results.map(page => {
+      const p = page.properties;
+      
+      // 輔助函式：安全讀取 Notion 各種型態的值
+      const getVal = (key) => {
+        const prop = p[key];
+        if (!prop) return '';
+        if (prop.type === 'title') return prop.title[0]?.plain_text || '';
+        if (prop.type === 'rich_text') return prop.rich_text[0]?.plain_text || '';
+        if (prop.type === 'select') return prop.select?.name || '';
+        if (prop.type === 'status') return prop.status?.name || '';
+        if (prop.type === 'number') return prop.number || 0;
+        return '';
+      };
 
-    return res.status(200).json(results);
-  } catch (err) {
-    return res.status(500).json({ error: 'Server error' });
+      // 找出對應的欄位名稱（支援多種常見命名）
+      const findKey = (possibleNames) => Object.keys(p).find(k => possibleNames.some(pn => k.trim().toLowerCase() === pn.trim().toLowerCase()));
+
+      return {
+        spec: getVal(findKey(['規格', '款式', 'Spec', '商品名稱', '商品', '品項'])),
+        delivery: getVal(findKey(['取貨方式', '寄送方式', '物流', 'Delivery'])),
+        quantity: getVal(findKey(['數量', '購買數量', 'Quantity'])),
+        status: getVal(findKey(['狀態', '訂單狀態', 'Status'])) || '待處理'
+      };
+    });
+
+    res.status(200).json(results);
+  } catch (error) {
+    console.error("Search Error:", error.body || error.message);
+    res.status(500).json({ error: error.body ? JSON.stringify(error.body) : error.message });
   }
-}
+};
