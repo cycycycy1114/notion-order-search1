@@ -14,11 +14,9 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: '缺少參數' });
     }
 
-    // 取得資料庫結構來動態尋找對應的屬性名稱
     const dbInfo = await notion.databases.retrieve({ database_id: dbId });
     const propsSchema = dbInfo.properties;
 
-    // 自動尋找可以代表「暱稱/客戶名稱」的欄位
     const namePropKey = Object.keys(propsSchema).find(k =>
       ['訂單', '訂單名稱', '暱稱', 'LINE社群暱稱', 'Name', 'Title'].some(p => k.trim().toLowerCase() === p.trim().toLowerCase())
     );
@@ -27,7 +25,6 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: 'Notion 資料庫中找不到對應的暱稱/標題欄位' });
     }
 
-    // 向 Notion 查詢符合該暱稱的頁面
     const response = await notion.databases.query({
       database_id: dbId,
       filter: {
@@ -38,11 +35,8 @@ module.exports = async (req, res) => {
       }
     });
 
-    // 格式化回傳給前端的資料
     const results = response.results.map(page => {
       const p = page.properties;
-      
-      // 輔助函式：安全讀取 Notion 各種型態的值
       const getVal = (key) => {
         const prop = p[key];
         if (!prop) return '';
@@ -54,7 +48,6 @@ module.exports = async (req, res) => {
         return '';
       };
 
-      // 找出對應的欄位名稱（支援多種常見命名）
       const findKey = (possibleNames) => Object.keys(p).find(k => possibleNames.some(pn => k.trim().toLowerCase() === pn.trim().toLowerCase()));
 
       return {
