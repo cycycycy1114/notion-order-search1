@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>訂單查詢</title>
+  <style>
+    body { font-family: sans-serif; max-width: 400px; margin: 20px auto; padding: 10px; text-align: center; }
+    input { padding: 10px; width: 60%; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+    button { padding: 10px 15px; font-size: 14px; background: #0070f3; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    .card { background: #f9f9f9; border: 1px solid #eaeaea; border-radius: 8px; padding: 12px; margin-top: 10px; text-align: left; }
+    .card p { margin: 6px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h3>📦 查詢您的訂單</h3>
+  <div>
+    <input type="text" id="nickname" placeholder="請輸入 LINE 暱稱">
+    <button onclick="search()">查詢</button>
+  </div>
+  <div id="results"></div>
+
+  <script>
+    async function search() {
+      const nickname = document.getElementById('nickname').value.trim();
+      const container = document.getElementById('results');
+      if (!nickname) { alert('請輸入暱稱'); return; }
+      container.innerHTML = '🔍 查詢中...';
+
+      try {
+        const res = await fetch(`/api/search?nickname=${encodeURIComponent(nickname)}`);
+        const data = await res.json();
+        if (data.length === 0) {
+          container.innerHTML = '<p style="color:red;">查無此暱稱的訂單</p>';
+          return;
+        }
+        container.innerHTML = '';
+        data.forEach(item => {
+          container.innerHTML += `
+            <div class="card">
+              <p><strong>商品：</strong> ${item.spec}</p>
+              <p><strong>取貨：</strong> ${item.delivery}</p>
+              <p><strong>數量：</strong> ${item.quantity}</p>
+              <p><strong>狀態：</strong> ${item.status}</p>
+            </div>
+          `;
+        });
+      } catch (e) {
+        container.innerHTML = '<p style="color:red;">查詢失敗</p>';
+      }
+    }
+  </script>
+</body>
+</html>
