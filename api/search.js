@@ -76,7 +76,7 @@ module.exports = async (req, res) => {
         spec: combinedSpec || '未命名商品', // 👈 把組合好的變數放進這裡
         delivery: getVal(['取貨方式', '寄送方式', '物流', 'Delivery']) || '未指定',
         quantity: getVal(['數量', '購買數量', 'Quantity']) || 1,
-        price: getVal(['金額', '價格', '總價', 'Price', 'Total']) || 0
+        price: getVal(['金額', '價格', '總價', 'Price', 'Total']) || 0,
         status: getVal(['狀態', '訂單狀態', 'Status']) || '待處理'
       };
     });
