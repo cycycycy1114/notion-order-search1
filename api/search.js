@@ -63,8 +63,17 @@ module.exports = async (req, res) => {
         return '';
       };
 
+      // 👇 【加在這裡】在這裡先讀取你想組合成規格的多個欄位
+      const productVal = getVal(['商品名稱', '商品', '品項']) || '';
+      const specVal = getVal(['規格', '款式', 'Spec']) || '';
+
+      // 把有內容的欄位用 " + " 連接起來（例如：衣服 + 黑色L號）
+      const combinedSpec = [productVal, specVal]
+        .filter(Boolean) // 自動過濾掉空白的欄位
+        .join(' + ');
+      
       return {
-        spec: getVal(['規格', '款式', 'Spec', '商品名稱', '商品', '品項']) || '未命名商品',
+        spec: combinedSpec || '未命名商品', // 👈 把組合好的變數放進這裡
         delivery: getVal(['取貨方式', '寄送方式', '物流', 'Delivery']) || '未指定',
         quantity: getVal(['數量', '購買數量', 'Quantity']) || 1,
         status: getVal(['狀態', '訂單狀態', 'Status']) || '待處理'
