@@ -72,11 +72,19 @@ module.exports = async (req, res) => {
         .filter(Boolean) // 自動過濾掉空白的欄位
         .join(' + ');
       
+      // 取得數量（若找不到預設為 1）
+      const qty = Number(getVal(['數量', '購買數量', 'Quantity'])) || 1;
+
+      // 取得單價與總價
+      const unitPrice = Number(getVal(['單價', '價格', 'Price'])) || 0;
+      const totalPrice = Number(getVal(['總價', '金額', 'Total', '總金額'])) || (unitPrice * qty);
+      
       return {
         spec: combinedSpec || '未命名商品', // 👈 把組合好的變數放進這裡
         delivery: getVal(['取貨方式', '寄送方式', '物流', 'Delivery']) || '未指定',
-        quantity: getVal(['數量', '購買數量', 'Quantity']) || 1,
-        price: getVal(['金額', '價格', '總價', 'Price', 'Total']) || 0,
+        quantity: qty,
+        unitPrice: unitPrice,   // 單價
+        totalPrice: totalPrice,  // 總價（如果 Notion 沒填總價，會自動用 單價 × 數量 幫你算出來！）
         status: getVal(['狀態', '訂單狀態', 'Status']) || '待處理'
       };
     });
