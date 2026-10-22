@@ -5,15 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DonPick 懂挑 | 訂單查詢系統</title>
   <style>
-    body { font-family: sans-serif; max-width: 400px; margin: 20px auto; padding: 10px; text-align: center; }
-    input { padding: 10px; width: 60%; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
-    button { padding: 10px 15px; font-size: 14px; background: #0070f3; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    body { font-family: sans-serif; max-width: 440px; margin: 20px auto; padding: 10px; text-align: center; background: #f7f6f3; color: #37352f; }
+    input { padding: 10px; width: 60%; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+    button { padding: 10px 15px; font-size: 14px; background: #2eaadc; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #2589b2; }
+
+    /* 🌟 單次訂單的大卡片外框 */
+    .order-group-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-top: 16px; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .order-header { font-size: 13px; color: #666; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; font-weight: 600; }
     
-    /* 🌟 調整卡片樣式：改成彈性左右排列，讓圖片和文字並排 */
-    .card { background: #f9f9f9; border: 1px solid #eaeaea; border-radius: 8px; padding: 12px; margin-top: 10px; text-align: left; display: flex; gap: 12px; align-items: center; }
-    .card img { width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; flex-shrink: 0; }
-    .card .info { flex-grow: 1; }
-    .card p { margin: 4px 0; font-size: 14px; }
+    /* 📦 商品明細列 */
+    .item-row { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; border-bottom: 1px dashed #eee; padding-bottom: 10px; }
+    .item-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .item-row img { width: 65px; height: 65px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; flex-shrink: 0; }
+    .item-info { flex-grow: 1; font-size: 13px; }
+    .item-info p { margin: 3px 0; }
+
+    /* 💰 底部總結與狀態 */
+    .order-footer { margin-top: 12px; padding-top: 10px; border-top: 1px solid #eee; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+    .remark-box { margin-top: 8px; background: #fff9c4; padding: 8px; border-radius: 6px; font-size: 12px; color: #555; }
   </style>
 </head>
 <body>
@@ -29,39 +39,90 @@
       const nickname = document.getElementById('nickname').value.trim();
       const container = document.getElementById('results');
       if (!nickname) { alert('請輸入暱稱'); return; }
-      container.innerHTML = '🔍 查詢中...';
+      container.innerHTML = '<p style="margin-top: 20px; color: #666;">🔍 查詢中...</p>';
 
       try {
         const res = await fetch(`/api/search?nickname=${encodeURIComponent(nickname)}`);
         const data = await res.json();
-        if (data.length === 0) {
-          container.innerHTML = '<p style="color:red;">查無此暱稱的訂單</p>';
+        
+        if (!Array.isArray(data) || data.length === 0) {
+          container.innerHTML = '<p style="color:red; margin-top: 20px;">查無此暱稱的訂單</p>';
           return;
         }
-        container.innerHTML = '';
-        data.forEach(item => {
-          const imageHtml = item.imageUrl 
-            ? `<img src="${item.imageUrl}" alt="商品圖片">`
-            : `<div style="width: 70px; height: 70px; background: #eee; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #888; flex-shrink: 0; text-align: center; border: 1px solid #ddd;">無圖片</div>`;
 
-          container.innerHTML += `
-            <div class="card">
-              ${imageHtml}
-              <div class="info">
-                <p><strong>商品：</strong> ${item.product}</p>
-                <p><strong>款式：</strong> ${item.spec}</p>
-                <p><strong>取貨：</strong> ${item.delivery}</p>
-                <p><strong>數量：</strong> ${item.quantity}</p>
-                <p><strong>單價：</strong> $${item.unitPrice}</p>
-                <p><strong>總價：</strong> $${item.totalPrice}</p>
-                <p><strong>物流狀態：</strong> <span style="color: #0070f3;">${item.shippingStatus}</span></p>
-                <p><strong>金流狀態：</strong> <span style="color: #e53e3e;">${item.paymentStatus}</span></p>
+        container.innerHTML = '';
+
+        // 🌟 1. 依照成單時間（精確到分鐘）將商品進行「群組化」
+        const groups = {};
+        data.forEach(item => {
+          // 如果後端有抓到 createdTime 就用它，沒有則用當下時間代替
+          const dateObj = item.createdTime ? new Date(item.createdTime) : new Date();
+          const timeKey = `${dateObj.getMonth() + 1}/${dateObj.getDate()} ${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+          
+          if (!groups[timeKey]) {
+            groups[timeKey] = {
+              time: timeKey,
+              delivery: item.delivery,
+              shippingStatus: item.shippingStatus,
+              paymentStatus: item.paymentStatus,
+              remark: item.remark,
+              items: [],
+              grandTotal: 0
+            };
+          }
+          groups[timeKey].items.push(item);
+          groups[timeKey].grandTotal += item.totalPrice;
+        });
+
+        // 🌟 2. 渲染群組化後的卡片（最新的排在最上方）
+        Object.values(groups).reverse().forEach(group => {
+          let itemsHtml = '';
+          
+          group.items.forEach(item => {
+            const imageHtml = item.imageUrl 
+              ? `<img src="${item.imageUrl}" alt="商品圖片">`
+              : `<div style="width: 65px; height: 65px; background: #eee; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #888; flex-shrink: 0; text-align: center; border: 1px solid #ddd;">無圖片</div>`;
+
+            itemsHtml += `
+              <div class="item-row">
+                ${imageHtml}
+                <div class="item-info">
+                  <p><strong>${item.product}</strong></p>
+                  <p style="color: #666;">規格：${item.spec}</p>
+                  <p>數量：${item.quantity} | 單價：$${item.unitPrice} | 小計：<strong style="color:#2eaadc;">$${item.totalPrice}</strong></p>
+                </div>
               </div>
+            `;
+          });
+
+          // 組合整張訂單大卡片
+          container.innerHTML += `
+            <div class="order-group-card">
+              <div class="order-header">
+                <span>📦 成單時間：${group.time}</span>
+                <span>取貨：${group.delivery}</span>
+              </div>
+              
+              ${itemsHtml}
+
+              <div class="order-footer">
+                <div>
+                  物流：<span style="color: #2eaadc; font-weight: bold;">${group.shippingStatus}</span> | 
+                  金流：<span style="color: #e53e3e; font-weight: bold;">${group.paymentStatus}</span>
+                </div>
+                <div style="font-size: 15px; font-weight: bold; color: #333;">
+                  總金額：$${group.grandTotal}
+                </div>
+              </div>
+
+              ${group.remark ? `<div class="remark-box">📝 <strong>備註：</strong>${group.remark}</div>` : ''}
             </div>
           `;
         });
+
       } catch (e) {
-        container.innerHTML = '<p style="color:red;">查詢失敗</p>';
+        console.error(e);
+        container.innerHTML = '<p style="color:red; margin-top: 20px;">查詢失敗，請稍後再試</p>';
       }
     }
   </script>
