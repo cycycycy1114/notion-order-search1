@@ -40,7 +40,6 @@
         }
         container.innerHTML = '';
         data.forEach(item => {
-          // 🌟 判斷是否有圖片：有就顯示縮圖，沒有就顯示「無圖片」文字方塊
           const imageHtml = item.imageUrl 
             ? `<img src="${item.imageUrl}" alt="商品圖片">`
             : `<div style="width: 70px; height: 70px; background: #eee; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #888; flex-shrink: 0; text-align: center; border: 1px solid #ddd;">無圖片</div>`;
@@ -49,13 +48,14 @@
             <div class="card">
               ${imageHtml}
               <div class="info">
-                <p><strong>商品：</strong> ${item.product || '未命名商品'}</p>
-                <p><strong>款式：</strong> ${item.spec || '標準款式'}</p>
+                <p><strong>商品：</strong> ${item.product}</p>
+                <p><strong>款式：</strong> ${item.spec}</p>
                 <p><strong>取貨：</strong> ${item.delivery}</p>
                 <p><strong>數量：</strong> ${item.quantity}</p>
                 <p><strong>單價：</strong> $${item.unitPrice}</p>
                 <p><strong>總價：</strong> $${item.totalPrice}</p>
-                <p><strong>狀態：</strong> ${item.status}</p>
+                <p><strong>物流狀態：</strong> <span style="color: #0070f3;">${item.shippingStatus}</span></p>
+                <p><strong>金流狀態：</strong> <span style="color: #e53e3e;">${item.paymentStatus}</span></p>
               </div>
             </div>
           `;
