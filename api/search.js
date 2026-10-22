@@ -128,14 +128,14 @@ module.exports = async (req, res) => {
       }
 
       return {
-        product: productVal,
-        spec: combinedSpec || '未命名商品',
+        product: productVal,    // 商品名稱獨立
+        spec: specVal,          // 款式名稱獨立（例如只有「奶茶色」）
         delivery: getVal(['取貨方式', '寄送方式', '物流', 'Delivery']) || '未指定',
         quantity: qty,
         unitPrice: unitPrice,
         totalPrice: totalPrice,
         status: getVal(['狀態', '訂單狀態', 'Status']) || '待處理',
-        imageUrl: imageUrl // 🌟 回傳抓到的圖片網址
+        imageUrl: imageUrl
       };
     });
 
