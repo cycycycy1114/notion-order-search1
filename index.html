@@ -8,8 +8,12 @@
     body { font-family: sans-serif; max-width: 400px; margin: 20px auto; padding: 10px; text-align: center; }
     input { padding: 10px; width: 60%; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
     button { padding: 10px 15px; font-size: 14px; background: #0070f3; color: white; border: none; border-radius: 6px; cursor: pointer; }
-    .card { background: #f9f9f9; border: 1px solid #eaeaea; border-radius: 8px; padding: 12px; margin-top: 10px; text-align: left; }
-    .card p { margin: 6px 0; font-size: 14px; }
+    
+    /* 🌟 調整卡片樣式：改成彈性左右排列，讓圖片和文字並排 */
+    .card { background: #f9f9f9; border: 1px solid #eaeaea; border-radius: 8px; padding: 12px; margin-top: 10px; text-align: left; display: flex; gap: 12px; align-items: center; }
+    .card img { width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; flex-shrink: 0; }
+    .card .info { flex-grow: 1; }
+    .card p { margin: 4px 0; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -36,14 +40,19 @@
         }
         container.innerHTML = '';
         data.forEach(item => {
+          // 🌟 在這裡加上圖片標籤，並將「商品」與「款式」獨立分開顯示
           container.innerHTML += `
             <div class="card">
-              <p><strong>商品：</strong> ${item.spec}</p>
-              <p><strong>取貨：</strong> ${item.delivery}</p>
-              <p><strong>數量：</strong> ${item.quantity}</p>
-              <p><strong>單價：</strong> $${item.unitPrice}</p>
-              <p><strong>總價：</strong> $${item.totalPrice}</p>
-              <p><strong>狀態：</strong> ${item.status}</p>
+              ${item.imageUrl ? `<img src="\${item.imageUrl}" alt="商品圖片">` : ''}
+              <div class="info">
+                <p><strong>商品：</strong> ${item.product || '未命名商品'}</p>
+                <p><strong>款式：</strong> ${item.spec || '標準款式'}</p>
+                <p><strong>取貨：</strong> ${item.delivery}</p>
+                <p><strong>數量：</strong> ${item.quantity}</p>
+                <p><strong>單價：</strong> $${item.unitPrice}</p>
+                <p><strong>總價：</strong> $${item.totalPrice}</p>
+                <p><strong>狀態：</strong> ${item.status}</p>
+              </div>
             </div>
           `;
         });
