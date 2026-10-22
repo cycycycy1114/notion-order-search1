@@ -1,8 +1,11 @@
-const { Client } = require('@notionhq/client');
+import { Client } from '@notionhq/client';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
+  // 強制設定 Content-Type 為 JSON，防止 Vercel 回傳純文字錯誤頁面
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
@@ -13,16 +16,16 @@ module.exports = async (req, res) => {
     const productDbId = process.env.PRODUCT_DB_ID || process.env.DATABASE_ID; // A 表 (主商品表)
 
     if (!databaseId || !notionToken) {
-      return res.status(500).json({ error: '伺服器未設定 Notion 環境變數' });
+      return res.status(500).json({ success: false, error: '伺服器未設定 Notion 環境變數' });
     }
 
     if (!nickname) {
-      return res.status(400).json({ error: '缺少查詢參數：nickname' });
+      return res.status(400).json({ success: false, error: '缺少查詢參數：nickname' });
     }
 
     const notion = new Client({ auth: notionToken });
 
-    // 1. 建立 A 表的對照字典 (ID -> 商品名稱)
+    // 1. 建立 A 表的對照字典 (ID -> 商品名稱)，以便精準解析 C 表的關聯
     let aMapById = {};
     if (productDbId) {
       try {
@@ -38,7 +41,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    // 2. 讀取 C 表 (款式細項表)，建立圖片對應字典 (同時支援 Relation 關聯與文字)
+    // 2. 讀取 C 表 (款式細項表)，建立嚴格的「商品名稱_款式名稱」圖片對應字典
     let imageMap = {};
 
     if (productDetailDbId) {
@@ -51,7 +54,7 @@ module.exports = async (req, res) => {
           const titleProp = p['款式名稱'] || p['名稱'] || p['Name'];
           const styleName = titleProp?.title?.[0]?.plain_text || titleProp?.rich_text?.[0]?.plain_text || '標準款式';
 
-          // 取得 C 表對應的商品名稱 (支援 Relation 關聯或各種文字型態)
+          // 取得 C 表對應的主商品名稱 (支援 Relation 關聯或文字)
           let parentName = '';
           const prodProp = p['商品名稱'] || p['商品'];
           
@@ -76,13 +79,9 @@ module.exports = async (req, res) => {
             imageUrl = fileObj.file?.url || fileObj.external?.url || '';
           }
 
-          if (imageUrl) {
-            // 如果有對應到主商品名稱，用「商品名稱_款式名稱」做最精準對應
-            if (parentName) {
-              imageMap[`${parentName}_${styleName}`] = imageUrl;
-            }
-            // 同時也保留單獨以「款式名稱」作為備用對應
-            imageMap[styleName] = imageUrl;
+          // 🌟 嚴格對應：必須同時有主商品名稱與圖片，才寫入字典，絕不互相覆蓋混用
+          if (parentName && imageUrl) {
+            imageMap[`${parentName}_${styleName}`] = imageUrl;
           }
         });
       } catch (e) {
@@ -99,7 +98,7 @@ module.exports = async (req, res) => {
     );
 
     if (!titlePropKey) {
-      return res.status(500).json({ error: 'Notion 資料庫中找不到 Title 欄位' });
+      return res.status(500).json({ success: false, error: 'Notion 資料庫中找不到 Title 欄位' });
     }
 
     const response = await notion.databases.query({
@@ -128,24 +127,25 @@ module.exports = async (req, res) => {
         return '';
       };
 
-      const productVal = getVal(['商品名稱', '商品', '品項']) || '';
-      const specVal = getVal(['規格', '款式', 'Spec']) || '';
+      const productVal = getVal(['商品名稱', '商品', '品項']) || '未命名商品';
+      const specVal = getVal(['規格', '款式', 'Spec']) || '標準款式';
       
       const qty = Number(getVal(['數量', '購買數量', 'Quantity'])) || 1;
       const unitPrice = Number(getVal(['單價', '價格', 'Price'])) || 0;
       const totalPrice = Number(getVal(['總價', '金額', 'Total', '總金額'])) || (unitPrice * qty);
       
-      // 🌟 智慧對應圖片：先找「商品名稱_款式名稱」，如果找不到則退回用「款式名稱」尋找
+      // 🌟 嚴格以「商品名稱_款式名稱」去抓取對應圖片，找不到即為空字串
       let imageUrl = '';
-      if (productVal && specVal && imageMap[`${productVal}_${specVal}`]) {
-        imageUrl = imageMap[`${productVal}_${specVal}`];
-      } else if (specVal && imageMap[specVal]) {
-        imageUrl = imageMap[specVal];
+      if (productVal && specVal) {
+        const key = `${productVal}_${specVal}`;
+        if (imageMap[key]) {
+          imageUrl = imageMap[key];
+        }
       }
 
       return {
         product: productVal,
-        spec: specVal || '標準款式',
+        spec: specVal,
         delivery: getVal(['取貨方式', '寄送方式', '物流', 'Delivery']) || '未指定',
         quantity: qty,
         unitPrice: unitPrice,
@@ -160,8 +160,9 @@ module.exports = async (req, res) => {
   } catch (error) {
     console.error("Notion Search Error:", error);
     return res.status(500).json({ 
+      success: false,
       error: "伺服器內部錯誤", 
       details: error.message || String(error) 
     });
   }
-};
+}
