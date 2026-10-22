@@ -134,13 +134,14 @@ export default async function handler(req, res) {
       }
 
       return {
+        createdTime: page.created_time, // 🌟 取得 Notion 內建建立時間 (成單時間)
+        remark: getVal(['備註', '留言', 'Remark', 'Memo']) || '', // 🌟 取得備註欄位
         product: productVal,
         spec: specVal,
         delivery: getVal(['取貨方式', '寄送方式', '物流', 'Delivery']) || '未指定',
         quantity: qty,
         unitPrice: unitPrice,
         totalPrice: totalPrice,
-        // 🌟 分別讀取物流狀態與金流狀態（找不到時顯示預設值）
         shippingStatus: getVal(['物流狀態', '出貨狀態', '物流']) || '備貨中',
         paymentStatus: getVal(['金流狀態', '付款狀態', '付款']) || '未付款',
         imageUrl: imageUrl
