@@ -10,7 +10,7 @@ module.exports = async (req, res) => {
     const databaseId = process.env.DATABASE_ID; // 訂單 B 表
     const notionToken = process.env.NOTION_TOKEN;
     const productDetailDbId = process.env.PRODUCT_DETAIL_DB_ID; // C 表 (款式細項)
-    const productDbId = process.env.PRODUCT_DB_ID; // A 表 (主商品表，用於解析 C 表的關聯)
+    const productDbId = process.env.PRODUCT_DB_ID || process.env.DATABASE_ID; // A 表 (主商品表)
 
     if (!databaseId || !notionToken) {
       return res.status(500).json({ error: '伺服器未設定 Notion 環境變數' });
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
 
     const notion = new Client({ auth: notionToken });
 
-    // 1. 先建立 A 表的對照字典 (ID -> 商品名稱)，以便精準解析 C 表的關聯
+    // 1. 建立 A 表的對照字典 (ID -> 商品名稱)
     let aMapById = {};
     if (productDbId) {
       try {
@@ -38,7 +38,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    // 2. 讀取 C 表 (款式細項表)，嚴格建立「商品名稱_款式名稱」的圖片對應字典
+    // 2. 讀取 C 表 (款式細項表)，建立圖片對應字典 (同時支援 Relation 關聯與文字)
     let imageMap = {};
 
     if (productDetailDbId) {
@@ -51,16 +51,21 @@ module.exports = async (req, res) => {
           const titleProp = p['款式名稱'] || p['名稱'] || p['Name'];
           const styleName = titleProp?.title?.[0]?.plain_text || titleProp?.rich_text?.[0]?.plain_text || '標準款式';
 
-          // 取得 C 表對應的商品名稱 (支援 Relation 或一般文字)
+          // 取得 C 表對應的商品名稱 (支援 Relation 關聯或各種文字型態)
           let parentName = '';
           const prodProp = p['商品名稱'] || p['商品'];
-          if (prodProp && prodProp.type === 'relation' && prodProp.relation.length > 0) {
-            const relId = prodProp.relation[0].id;
-            parentName = aMapById[relId] || '';
-          } else if (prodProp) {
-            if (prodProp.type === 'select') parentName = prodProp.select?.name || '';
-            else if (prodProp.type === 'rich_text') parentName = prodProp.rich_text?.[0]?.plain_text || '';
-            else if (prodProp.type === 'title') parentName = prodProp.title?.[0]?.plain_text || '';
+          
+          if (prodProp) {
+            if (prodProp.type === 'relation' && prodProp.relation.length > 0) {
+              const relId = prodProp.relation[0].id;
+              parentName = aMapById[relId] || '';
+            } else if (prodProp.type === 'select') {
+              parentName = prodProp.select?.name || '';
+            } else if (prodProp.type === 'rich_text') {
+              parentName = prodProp.rich_text?.[0]?.plain_text || '';
+            } else if (prodProp.type === 'title') {
+              parentName = prodProp.title?.[0]?.plain_text || '';
+            }
           }
 
           // 取得圖片網址
@@ -71,9 +76,13 @@ module.exports = async (req, res) => {
             imageUrl = fileObj.file?.url || fileObj.external?.url || '';
           }
 
-          // 🌟 嚴格對應：必須同時符合商品名稱與款式名稱，絕不互相覆蓋
-          if (parentName && imageUrl) {
-            imageMap[`${parentName}_${styleName}`] = imageUrl;
+          if (imageUrl) {
+            // 如果有對應到主商品名稱，用「商品名稱_款式名稱」做最精準對應
+            if (parentName) {
+              imageMap[`${parentName}_${styleName}`] = imageUrl;
+            }
+            // 同時也保留單獨以「款式名稱」作為備用對應
+            imageMap[styleName] = imageUrl;
           }
         });
       } catch (e) {
@@ -81,7 +90,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    // 3. 取得訂單資料庫結構與資料
+    // 3. 查詢 Notion 訂單資料庫 (B 表)
     const dbInfo = await notion.databases.retrieve({ database_id: databaseId });
     const propsSchema = dbInfo.properties;
 
@@ -126,10 +135,12 @@ module.exports = async (req, res) => {
       const unitPrice = Number(getVal(['單價', '價格', 'Price'])) || 0;
       const totalPrice = Number(getVal(['總價', '金額', 'Total', '總金額'])) || (unitPrice * qty);
       
-      // 🌟 精準用「商品名稱_款式名稱」去抓取對應圖片
+      // 🌟 智慧對應圖片：先找「商品名稱_款式名稱」，如果找不到則退回用「款式名稱」尋找
       let imageUrl = '';
       if (productVal && specVal && imageMap[`${productVal}_${specVal}`]) {
         imageUrl = imageMap[`${productVal}_${specVal}`];
+      } else if (specVal && imageMap[specVal]) {
+        imageUrl = imageMap[specVal];
       }
 
       return {
