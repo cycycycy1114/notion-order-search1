@@ -1,7 +1,6 @@
 import { Client } from '@notionhq/client';
 
 export default async function handler(req, res) {
-  // 強制設定 Content-Type 為 JSON，防止 Vercel 回傳純文字錯誤頁面
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (req.method !== 'GET') {
@@ -10,10 +9,10 @@ export default async function handler(req, res) {
 
   try {
     const { nickname } = req.query;
-    const databaseId = process.env.DATABASE_ID; // 訂單 B 表
+    const databaseId = process.env.DATABASE_ID;
     const notionToken = process.env.NOTION_TOKEN;
-    const productDetailDbId = process.env.PRODUCT_DETAIL_DB_ID; // C 表 (款式細項)
-    const productDbId = process.env.PRODUCT_DB_ID || process.env.DATABASE_ID; // A 表 (主商品表)
+    const productDetailDbId = process.env.PRODUCT_DETAIL_DB_ID;
+    const productDbId = process.env.PRODUCT_DB_ID || process.env.DATABASE_ID;
 
     if (!databaseId || !notionToken) {
       return res.status(500).json({ success: false, error: '伺服器未設定 Notion 環境變數' });
@@ -25,7 +24,7 @@ export default async function handler(req, res) {
 
     const notion = new Client({ auth: notionToken });
 
-    // 1. 建立 A 表的對照字典 (ID -> 商品名稱)，以便精準解析 C 表的關聯
+    // 1. 建立 A 表對照字典
     let aMapById = {};
     if (productDbId) {
       try {
@@ -41,23 +40,18 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. 讀取 C 表 (款式細項表)，建立嚴格的「商品名稱_款式名稱」圖片對應字典
+    // 2. 建立 C 表圖片對應字典
     let imageMap = {};
-
     if (productDetailDbId) {
       try {
         const cRes = await notion.databases.query({ database_id: productDetailDbId });
         cRes.results.forEach(page => {
           const p = page.properties;
-          
-          // 取得 C 表的款式名稱
           const titleProp = p['款式名稱'] || p['名稱'] || p['Name'];
           const styleName = titleProp?.title?.[0]?.plain_text || titleProp?.rich_text?.[0]?.plain_text || '標準款式';
 
-          // 取得 C 表對應的主商品名稱 (支援 Relation 關聯或文字)
           let parentName = '';
           const prodProp = p['商品名稱'] || p['商品'];
-          
           if (prodProp) {
             if (prodProp.type === 'relation' && prodProp.relation.length > 0) {
               const relId = prodProp.relation[0].id;
@@ -71,7 +65,6 @@ export default async function handler(req, res) {
             }
           }
 
-          // 取得圖片網址
           const imgProp = p['款式圖片'] || p['圖片'] || p['Files'];
           let imageUrl = '';
           if (imgProp?.files?.[0]) {
@@ -79,7 +72,6 @@ export default async function handler(req, res) {
             imageUrl = fileObj.file?.url || fileObj.external?.url || '';
           }
 
-          // 🌟 嚴格對應：必須同時有主商品名稱與圖片，才寫入字典，絕不互相覆蓋混用
           if (parentName && imageUrl) {
             imageMap[`${parentName}_${styleName}`] = imageUrl;
           }
@@ -89,7 +81,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. 查詢 Notion 訂單資料庫 (B 表)
+    // 3. 查詢訂單資料庫
     const dbInfo = await notion.databases.retrieve({ database_id: databaseId });
     const propsSchema = dbInfo.properties;
 
@@ -111,7 +103,6 @@ export default async function handler(req, res) {
       }
     });
 
-    // 4. 格式化回傳結果
     const results = response.results.map(page => {
       const p = page.properties;
 
@@ -134,7 +125,6 @@ export default async function handler(req, res) {
       const unitPrice = Number(getVal(['單價', '價格', 'Price'])) || 0;
       const totalPrice = Number(getVal(['總價', '金額', 'Total', '總金額'])) || (unitPrice * qty);
       
-      // 🌟 嚴格以「商品名稱_款式名稱」去抓取對應圖片，找不到即為空字串
       let imageUrl = '';
       if (productVal && specVal) {
         const key = `${productVal}_${specVal}`;
@@ -150,7 +140,9 @@ export default async function handler(req, res) {
         quantity: qty,
         unitPrice: unitPrice,
         totalPrice: totalPrice,
-        status: getVal(['狀態', '訂單狀態', 'Status']) || '待處理',
+        // 🌟 分別讀取物流狀態與金流狀態（找不到時顯示預設值）
+        shippingStatus: getVal(['物流狀態', '出貨狀態', '物流']) || '備貨中',
+        paymentStatus: getVal(['金流狀態', '付款狀態', '付款']) || '未付款',
         imageUrl: imageUrl
       };
     });
